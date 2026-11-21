@@ -3501,6 +3501,7 @@ void RenderingServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_video_adapter_vendor"), &RenderingServer::get_video_adapter_vendor);
 	ClassDB::bind_method(D_METHOD("get_video_adapter_type"), &RenderingServer::get_video_adapter_type);
 	ClassDB::bind_method(D_METHOD("get_video_adapter_api_version"), &RenderingServer::get_video_adapter_api_version);
+	ClassDB::bind_method(D_METHOD("is_dlss_supported"), &RenderingServer::is_dlss_supported);
 
 	ClassDB::bind_method(D_METHOD("get_current_rendering_driver_name"), &RenderingServer::get_current_rendering_driver_name);
 	ClassDB::bind_method(D_METHOD("get_current_rendering_method"), &RenderingServer::get_current_rendering_method);

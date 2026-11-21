@@ -182,6 +182,10 @@ DLSSEffect::~DLSSEffect() {
 	shaders.mvec_decode_shader.version_free(shaders.mvec_decode_version);
 }
 
+bool DLSSEffect::is_supported() const {
+	return StreamlineContext::get().slDLSSGetOptimalSettings != nullptr;
+}
+
 DLSSContext *DLSSEffect::create_context(Size2i p_internal_size, Size2i p_target_size) {
 	DLSSContextInner *context = memnew(RendererRD::DLSSContextInner);
 
@@ -598,6 +602,8 @@ static bool g_ngx_initialized = false;
 static NVSDK_NGX_Parameter *g_ngx_params = nullptr;
 static bool g_ngx_dlss_rr_available = false;
 static bool g_ngx_dlss_sr_available = false;
+static bool g_ngx_dlss_sr_support_queried = false;
+static bool g_ngx_dlss_sr_supported = false;
 
 namespace RendererRD {
 class NGXDLSSContext : public DLSSContext {
@@ -632,6 +638,75 @@ public:
 
 static void _ngx_log_callback(const char *message, NVSDK_NGX_Logging_Level level, NVSDK_NGX_Feature source) {
 	print_line(vformat("[NGX LOG] [%d] %s", (int)level, String(message)));
+}
+
+static bool _ngx_query_dlss_sr_support() {
+	if (g_ngx_dlss_sr_support_queried) {
+		return g_ngx_dlss_sr_supported;
+	}
+
+	RenderingDevice *rd = RD::get_singleton();
+	if (!rd) {
+		return false;
+	}
+
+	VkInstance vk_instance = (VkInstance)rd->get_driver_resource(RD::DriverResource::DRIVER_RESOURCE_TOPMOST_OBJECT, RID(), 0);
+	VkPhysicalDevice vk_phys_device = (VkPhysicalDevice)rd->get_driver_resource(RD::DriverResource::DRIVER_RESOURCE_PHYSICAL_DEVICE, RID(), 0);
+	if (!vk_instance || !vk_phys_device) {
+		return false;
+	}
+
+	String ngx_app_data_dir = OS::get_singleton()->get_user_data_dir().path_join("ngx_dlss_logs");
+	Error mkdir_error = DirAccess::make_dir_recursive_absolute(ngx_app_data_dir);
+	if (mkdir_error != OK) {
+		ERR_PRINT(vformat("[NGX DLSS] Failed to create NGX data directory for capability query: %s (error %d)", ngx_app_data_dir, mkdir_error));
+		return false;
+	}
+
+	String exe_dir = OS::get_singleton()->get_executable_path().get_base_dir();
+	String ngx_shipped = exe_dir;
+	String ngx_dev = exe_dir.path_join("../thirdparty/ngx/lib/linux_x86_64").simplify_path();
+	auto to_wstring = [](const String &s) -> std::wstring {
+		static_assert(sizeof(wchar_t) == sizeof(char32_t), "NGX Linux paths require 32-bit wchar_t");
+		std::wstring result;
+		result.reserve(s.length());
+		for (int i = 0; i < s.length(); i++) {
+			result.push_back(static_cast<wchar_t>(s[i]));
+		}
+		return result;
+	};
+	std::wstring shipped_ws = to_wstring(ngx_shipped);
+	std::wstring dev_ws = to_wstring(ngx_dev);
+	std::wstring app_data_ws = to_wstring(ngx_app_data_dir);
+	const wchar_t *ngx_search_paths[] = { shipped_ws.c_str(), dev_ws.c_str() };
+
+	NVSDK_NGX_FeatureCommonInfo feature_info = {};
+	feature_info.PathListInfo.Path = ngx_search_paths;
+	feature_info.PathListInfo.Length = 2;
+	feature_info.LoggingInfo.MinimumLoggingLevel = NVSDK_NGX_LOGGING_LEVEL_OFF;
+	feature_info.LoggingInfo.LoggingCallback = nullptr;
+	feature_info.LoggingInfo.DisableOtherLoggingSinks = true;
+
+	NVSDK_NGX_FeatureDiscoveryInfo discovery_info = {};
+	discovery_info.SDKVersion = NVSDK_NGX_Version_API;
+	discovery_info.FeatureID = NVSDK_NGX_Feature_SuperSampling;
+	discovery_info.Identifier.IdentifierType = NVSDK_NGX_Application_Identifier_Type_Project_Id;
+	discovery_info.Identifier.v.ProjectDesc.ProjectId = "a0f57b54-1daf-4934-90ae-c4035c19df04";
+	discovery_info.Identifier.v.ProjectDesc.EngineType = NVSDK_NGX_ENGINE_TYPE_CUSTOM;
+	discovery_info.Identifier.v.ProjectDesc.EngineVersion = "4.7.0";
+	discovery_info.ApplicationDataPath = app_data_ws.c_str();
+	discovery_info.FeatureInfo = &feature_info;
+
+	NVSDK_NGX_FeatureRequirement requirements = {};
+	NVSDK_NGX_Result result = NVSDK_NGX_VULKAN_GetFeatureRequirements(vk_instance, vk_phys_device, &discovery_info, &requirements);
+	g_ngx_dlss_sr_support_queried = true;
+	g_ngx_dlss_sr_supported = NVSDK_NGX_SUCCEED(result) && requirements.FeatureSupported == NVSDK_NGX_FeatureSupportResult_Supported;
+	if (NVSDK_NGX_FAILED(result)) {
+		print_line(vformat("[NGX DLSS] DLSS-SR capability query failed: 0x%x", (uint32_t)result));
+	} else {
+		print_line(vformat("[NGX DLSS] DLSS-SR capability query result: %d", (int)requirements.FeatureSupported));
+	}
+	return g_ngx_dlss_sr_supported;
 }
 
 static bool _ngx_ensure_init() {
@@ -808,6 +883,10 @@ DLSSEffect::~DLSSEffect() {
 		NVSDK_NGX_VULKAN_Shutdown1(nullptr);
 		g_ngx_initialized = false;
 	}
+}
+
+bool DLSSEffect::is_supported() const {
+	return _ngx_query_dlss_sr_support();
 }
 
 DLSSContext *DLSSEffect::create_context(Size2i p_internal_size, Size2i p_target_size) {
@@ -1130,6 +1209,7 @@ bool DLSSEffect::is_ready(DLSSContext *p_context) {
 // ============================================================================
 DLSSEffect::DLSSEffect() {}
 DLSSEffect::~DLSSEffect() {}
+bool DLSSEffect::is_supported() const { return false; }
 DLSSContext *DLSSEffect::create_context(Size2i p_internal_size, Size2i p_target_size) {
 	return nullptr;
 }

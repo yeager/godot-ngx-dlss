@@ -902,6 +902,7 @@ public:
 	virtual bool free(RID p_rid) override;
 
 	virtual void update() override;
+	virtual bool is_dlss_supported() const override;
 
 	RenderForwardClustered();
 	~RenderForwardClustered();

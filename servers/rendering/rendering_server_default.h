@@ -810,6 +810,7 @@ public:
 //from now on, calls forwarded to this singleton
 #define ServerName RenderingMethod
 #define server_name RSG::scene
+	FUNC0RC(bool, is_dlss_supported)
 
 	FUNCRIDSPLIT(compositor_effect)
 	FUNC2(compositor_effect_set_enabled, RID, bool)

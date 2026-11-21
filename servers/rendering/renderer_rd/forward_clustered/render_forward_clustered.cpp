@@ -386,6 +386,10 @@ void RenderForwardClustered::update() {
 	_update_global_pipeline_data_requirements_from_light_storage();
 }
 
+bool RenderForwardClustered::is_dlss_supported() const {
+	return dlss_effect && dlss_effect->is_supported();
+}
+
 /// RENDERING ///
 
 template <RenderForwardClustered::PassMode p_pass_mode, uint32_t p_color_pass_flags>

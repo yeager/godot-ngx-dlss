@@ -86,6 +86,7 @@ public:
 
 	DLSSEffect();
 	~DLSSEffect();
+	bool is_supported() const;
 	DLSSContext *create_context(Size2i p_internal_size, Size2i p_target_size);
 	void upscale(const DLSSContext::Parameters &p_params);
 	bool is_ready(DLSSContext *context);

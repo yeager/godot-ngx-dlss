@@ -358,5 +358,6 @@ public:
 	virtual void material_set_use_debanding(bool p_enable) = 0;
 
 	virtual void update() = 0;
+	virtual bool is_dlss_supported() const { return false; }
 	virtual ~RendererSceneRender() {}
 };
